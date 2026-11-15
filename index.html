@@ -1022,24 +1022,21 @@ async function readKTP(){
  try{
   // Perbesar gambar, ubah ke grayscale, tingkatkan kontras, lalu buat versi hitam-putih.
   const img=await new Promise((resolve,reject)=>{const u=URL.createObjectURL(file),im=new Image();im.onload=()=>{URL.revokeObjectURL(u);resolve(im)};im.onerror=reject;im.src=u});
-  const scale=Math.min(3,Math.max(2,2200/Math.max(img.naturalWidth,img.naturalHeight)));
+  // Mode HP: batasi resolusi agar pemrosesan OCR tidak membebani memori dan CPU.
+  const scale=Math.min(1.5,1500/Math.max(img.naturalWidth,img.naturalHeight));
   const canvas=document.createElement('canvas');canvas.width=Math.round(img.naturalWidth*scale);canvas.height=Math.round(img.naturalHeight*scale);
   const ctx=canvas.getContext('2d',{willReadFrequently:true});ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(img,0,0,canvas.width,canvas.height);
   const pixels=ctx.getImageData(0,0,canvas.width,canvas.height),a=pixels.data;
   for(let i=0;i<a.length;i+=4){let v=.299*a[i]+.587*a[i+1]+.114*a[i+2];v=Math.max(0,Math.min(255,(v-128)*1.65+128));a[i]=a[i+1]=a[i+2]=v;}
   ctx.putImageData(pixels,0,0);
-  const result=await Tesseract.recognize(canvas,'ind+eng',{
+  // KTP Indonesia cukup dibaca dengan model bahasa Indonesia; satu proses OCR saja.
+  const result=await Tesseract.recognize(canvas,'ind',{ 
    logger:m=>{if(m.status==='recognizing text')$('ocrStatus').textContent='Membaca tulisan KTP: '+Math.round((m.progress||0)*100)+'%';else if(m.status==='loading language traineddata')$('ocrStatus').textContent='Mengunduh data bahasa OCR: '+Math.round((m.progress||0)*100)+'%';else if(m.status==='initializing api')$('ocrStatus').textContent='Menyiapkan mesin OCR...';},
    tessedit_pageseg_mode:'6', preserve_interword_spaces:'1'
   });
-  // Jalankan OCR kedua dengan mode sparse-text agar kolom jenis kelamin yang
-  // terpisah dari baris lain ikut terbaca.
-  let secondText='';
-  try{
-   const second=await Tesseract.recognize(canvas,'ind+eng',{tessedit_pageseg_mode:'11',preserve_interword_spaces:'1'});
-   secondText=second.data.text||'';
-  }catch(e){console.warn('OCR kedua tidak tersedia',e);}
-  const raw=((result.data.text||'')+'\n'+secondText).toUpperCase().replace(/\r/g,'\n');
+  // Gunakan satu hasil OCR. Jika ada kolom yang tidak terbaca, pengguna
+  // tetap dapat melengkapi data secara manual pada formulir.
+  const raw=(result.data.text||'').toUpperCase().replace(/\r/g,'\n');
   const lines=raw.split(/\n/).map(x=>x.replace(/[|]/g,' ').replace(/\s+/g,' ').trim()).filter(Boolean);
   const text=lines.join('\n');
   const clean=v=>String(v||'').replace(/^[\s:;.,|_=-]+|[\s;|_=-]+$/g,'').replace(/\s{2,}/g,' ').trim();
